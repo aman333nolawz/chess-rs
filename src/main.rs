@@ -35,7 +35,7 @@ fn draw_board(
         let y = (i / 8) as f32;
         draw_rectangle(x * SQ, y * SQ, SQ, SQ, colors[(x + y) as usize % 2]);
 
-        let piece = chess.get_piece_at(i);
+        let piece = chess.get_piece_at(63 - i);
         if piece.is_some() {
             draw_texture_ex(
                 &piece_textures[&piece.unwrap().get_char()],
@@ -49,7 +49,7 @@ fn draw_board(
             draw_rectangle_lines(x * SQ, y * SQ, SQ, SQ, 10.0, BLUE);
         }
 
-        if get_nth_bit(legal_moves, i) == 1 {
+        if get_nth_bit(legal_moves, 63 - i) == 1 {
             draw_circle(
                 x * SQ + SQ / 2.0,
                 y * SQ + SQ / 2.0,
@@ -99,10 +99,10 @@ async fn main() {
             if selected.is_none() {
                 if 0.0 < x && x < 8.0 && 0.0 < y && y < 8.0 {
                     selected = Some(i);
-                    legal_moves = chess.legal_moves(selected.unwrap(), chess.turn);
+                    legal_moves = chess.legal_moves(63 - selected.unwrap(), chess.turn);
                 }
             } else {
-                chess.move_piece(selected.unwrap(), i as u8);
+                chess.move_piece(63 - selected.unwrap(), 63 - i as u8);
                 selected = None;
                 legal_moves = 0;
             }

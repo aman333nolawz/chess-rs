@@ -20,26 +20,18 @@ const CLEAR_FILE: [u64; 8] = [
     18374403900871474942,
 ];
 
-// #[derive(PartialEq, Eq, PartialOrd, Ord)]
-// pub enum PieceColor {
-//     BLACK,
-//     WHITE,
-// }
-
-// pub enum Piece {
-//     PAWN(PieceColor),
-//     BISHOP(PieceColor),
-//     KNIGHT(PieceColor),
-//     ROOK(PieceColor),
-//     QUEEN(PieceColor),
-//     KING(PieceColor),
-//     BLANK,
-// }
-
 pub struct Side;
 impl Side {
     pub const WHITE: usize = 1;
     pub const BLACK: usize = 0;
+
+    pub fn get_opposite(side: usize) -> usize {
+        if side == Side::WHITE {
+            Side::BLACK
+        } else {
+            Side::WHITE
+        }
+    }
 }
 
 pub struct PieceType;
@@ -75,7 +67,6 @@ impl Piece {
         if self.side == Side::WHITE {
             character = character.to_ascii_uppercase();
         }
-        // println!("{}, {}, {}", character, self.side, self.piece_type);
         character
     }
 }
@@ -100,17 +91,12 @@ impl Chess {
         board[Side::WHITE][PieceType::QUEEN] = 16;
         board[Side::WHITE][PieceType::KING] = 8;
 
-        board[Side::WHITE][PieceType::BISHOP] = 0;
-        board[Side::WHITE][PieceType::ROOK] = 0;
-        board[Side::WHITE][PieceType::QUEEN] = 0;
-
         board[Side::BLACK][PieceType::PAWN] = 71776119061217280;
         board[Side::BLACK][PieceType::BISHOP] = 2594073385365405696;
         board[Side::BLACK][PieceType::KNIGHT] = 4755801206503243776;
         board[Side::BLACK][PieceType::ROOK] = 9295429630892703744;
         board[Side::BLACK][PieceType::QUEEN] = 1152921504606846976;
-        // let black_king = 576460752303423488;
-        board[Side::BLACK][PieceType::KING] = 549755813888;
+        board[Side::BLACK][PieceType::KING] = 576460752303423488;
 
         Self {
             board,
@@ -132,12 +118,19 @@ impl Chess {
     pub fn legal_moves(self, i: u8, turn: usize) -> u64 {
         match self.get_piece_at(i) {
             Some(piece) => {
-                if piece.side != turn {
-                    0
-                } else if piece.piece_type == PieceType::KING {
+                // if piece.side != turn {
+                //     0
+                // } else
+                if piece.piece_type == PieceType::KING {
                     self.get_king_pseudo_moves(Some(i), piece.side)
                 } else if piece.piece_type == PieceType::KNIGHT {
                     self.get_knight_pseudo_moves(Some(i), piece.side)
+                } else if piece.piece_type == PieceType::BISHOP {
+                    self.get_bishop_pseudo_moves(Some(i), piece.side)
+                } else if piece.piece_type == PieceType::ROOK {
+                    self.get_rook_pseudo_moves(Some(i), piece.side)
+                } else if piece.piece_type == PieceType::QUEEN {
+                    self.get_queen_pseudo_moves(Some(i), piece.side)
                 } else if piece.piece_type == PieceType::PAWN && piece.side == Side::WHITE {
                     self.get_white_pawn_pseudo_moves(Some(i))
                 } else if piece.piece_type == PieceType::PAWN && piece.side == Side::BLACK {
@@ -150,14 +143,14 @@ impl Chess {
         }
     }
 
-    fn get_king_pseudo_moves(&self, i: Option<u8>, side: usize) -> u64 {
+    fn get_king_pseudo_moves(&self, piece_pos: Option<u8>, side: usize) -> u64 {
         let king_pos: u64;
         let mut own_side: u64 = 0;
         for pieces in self.board[side] {
             own_side = own_side | pieces;
         }
 
-        match i {
+        match piece_pos {
             Some(n) => king_pos = 0 | (1 << n),
             None => king_pos = self.board[side][PieceType::KING],
         }
@@ -179,13 +172,13 @@ impl Chess {
         return king_moves & !own_side;
     }
 
-    fn get_knight_pseudo_moves(&self, i: Option<u8>, side: usize) -> u64 {
+    fn get_knight_pseudo_moves(&self, piece_pos: Option<u8>, side: usize) -> u64 {
         let knights_pos: u64;
         let mut own_side: u64 = 0;
         for pieces in self.board[side] {
             own_side = own_side | pieces;
         }
-        match i {
+        match piece_pos {
             Some(n) => knights_pos = 0 | (1 << n),
             None => knights_pos = self.board[side][PieceType::KNIGHT],
         }
@@ -214,6 +207,168 @@ impl Chess {
         return knight_valid & !own_side;
     }
 
+    fn get_bishop_pseudo_moves(&self, piece_pos: Option<u8>, side: usize) -> u64 {
+        let bishops_pos: u64;
+        let mut own_side: u64 = 0;
+        let mut opp_side: u64 = 0;
+        for (i, pieces) in self.board[side].iter().enumerate() {
+            own_side = own_side | pieces;
+            opp_side = opp_side | self.board[Side::get_opposite(side)][i];
+        }
+
+        match piece_pos {
+            Some(n) => bishops_pos = 0 | (1 << n),
+            None => bishops_pos = self.board[side][PieceType::BISHOP],
+        };
+
+        let mut valid_moves = 0;
+
+        let get_spot = |i: usize, j: usize| {
+            if i == 0 && bishops_pos & CLEAR_FILE[7] != 0 {
+                bishops_pos << 7 * j // top right
+            } else if i == 1 && bishops_pos & CLEAR_FILE[7] != 0 {
+                bishops_pos >> 9 * j // bottom right
+            } else if i == 2 && bishops_pos & CLEAR_FILE[0] != 0 {
+                bishops_pos >> 7 * j // bottom left
+            } else if i == 3 && bishops_pos & CLEAR_FILE[0] != 0 {
+                bishops_pos << 9 * j // top left
+            } else {
+                0
+            }
+        };
+
+        for i in 0..=3 {
+            'inner: for j in 1..=7 {
+                let spot = get_spot(i, j);
+                if spot & own_side != 0 {
+                    // There is a piece of same side on the way bllocking
+                    break 'inner;
+                }
+
+                valid_moves = valid_moves | spot;
+
+                if (i <= 1 && spot & CLEAR_FILE[7] == 0) // checking overflow
+                || (i > 1 && spot & CLEAR_FILE[0] == 0) // checking overflow
+                || spot & opp_side != 0
+                {
+                    // checking if there is an opponent piece to capture
+                    break 'inner;
+                }
+            }
+        }
+        valid_moves
+    }
+
+    fn get_rook_pseudo_moves(&self, piece_pos: Option<u8>, side: usize) -> u64 {
+        let rooks_pos: u64;
+        let mut own_side: u64 = 0;
+        let mut opp_side: u64 = 0;
+        for (i, pieces) in self.board[side].iter().enumerate() {
+            own_side = own_side | pieces;
+            opp_side = opp_side | self.board[Side::get_opposite(side)][i];
+        }
+
+        match piece_pos {
+            Some(n) => rooks_pos = 0 | (1 << n),
+            None => rooks_pos = self.board[side][PieceType::ROOK],
+        };
+
+        let mut valid_moves = 0;
+
+        let get_spot = |i: usize, j: usize| {
+            if i == 0 && rooks_pos & CLEAR_FILE[7] != 0 {
+                rooks_pos >> 1 * j // Rook right
+            } else if i == 1 && rooks_pos & CLEAR_FILE[0] != 0 {
+                rooks_pos << 1 * j // Rook left
+            } else if i == 2 {
+                rooks_pos << 8 * j // Rook up
+            } else if i == 3 {
+                rooks_pos >> 8 * j // Rook down
+            } else {
+                0
+            }
+        };
+
+        for i in 0..=3 {
+            for j in 1..=7 {
+                let spot = get_spot(i, j);
+                if spot & own_side != 0 {
+                    // There is a piece of same side on the way bllocking
+                    break;
+                }
+                valid_moves = valid_moves | spot;
+
+                if (i == 0 && spot & CLEAR_FILE[7] == 0) // checking overflow
+                    || (i == 1 && spot & CLEAR_FILE[0] == 0) // checking overflow
+                    || spot & opp_side != 0
+                // checking if there is an opponent piece to capture
+                {
+                    break;
+                }
+            }
+        }
+        valid_moves
+    }
+
+    fn get_queen_pseudo_moves(&self, piece_pos: Option<u8>, side: usize) -> u64 {
+        let queens_pos: u64;
+        let mut own_side: u64 = 0;
+        let mut opp_side: u64 = 0;
+        for (i, pieces) in self.board[side].iter().enumerate() {
+            own_side = own_side | pieces;
+            opp_side = opp_side | self.board[Side::get_opposite(side)][i];
+        }
+
+        match piece_pos {
+            Some(n) => queens_pos = 0 | (1 << n),
+            None => queens_pos = self.board[side][PieceType::ROOK],
+        };
+
+        let mut valid_moves = 0;
+
+        let get_spot = |i: usize, j: usize| {
+            if i == 0 && queens_pos & CLEAR_FILE[7] != 0 {
+                queens_pos << 7 * j // top right
+            } else if i == 1 && queens_pos & CLEAR_FILE[7] != 0 {
+                queens_pos >> 9 * j // bottom right
+            } else if i == 2 && queens_pos & CLEAR_FILE[0] != 0 {
+                queens_pos >> 7 * j // bottom left
+            } else if i == 3 && queens_pos & CLEAR_FILE[0] != 0 {
+                queens_pos << 9 * j // top left
+            } else if i == 4 && queens_pos & CLEAR_FILE[7] != 0 {
+                queens_pos >> 1 * j // right
+            } else if i == 5 && queens_pos & CLEAR_FILE[0] != 0 {
+                queens_pos << 1 * j // left
+            } else if i == 6 {
+                queens_pos << 8 * j // up
+            } else if i == 7 {
+                queens_pos >> 8 * j // down
+            } else {
+                0
+            }
+        };
+
+        for i in 0..=7 {
+            for j in 1..=7 {
+                let spot = get_spot(i, j);
+                if spot & own_side != 0 {
+                    // There is a piece of same side on the way bllocking
+                    break;
+                }
+                valid_moves = valid_moves | spot;
+
+                if ((i == 0 || i == 1 || i == 4) && spot & CLEAR_FILE[7] == 0) // checking overflow
+                    || ((i == 2 || i == 3|| i == 5) && spot & CLEAR_FILE[0] == 0) // checking overflow
+                    || spot & opp_side != 0
+                // checking if there is an opponent piece to capture
+                {
+                    break;
+                }
+            }
+        }
+        valid_moves
+    }
+
     fn get_white_pawn_pseudo_moves(&self, i: Option<u8>) -> u64 {
         let pawns_pos: u64;
         let mut white_pieces = 0;
@@ -228,9 +383,9 @@ impl Chess {
             None => pawns_pos = self.board[Side::WHITE][PieceType::PAWN],
         };
 
-        let one_step = pawns_pos << 8 & !white_pieces;
-        let two_step = (one_step & !CLEAR_RANK[2]) << 8;
-        let valid_moves = (one_step | two_step) & !black_pieces;
+        let one_step = pawns_pos << 8 & !white_pieces & !black_pieces;
+        let two_step = (one_step & !CLEAR_RANK[2]) << 8 & !white_pieces & !black_pieces;
+        let valid_moves = one_step | two_step;
 
         // Attacks
         let left_attack = (pawns_pos & CLEAR_FILE[0]) << 7;
@@ -254,9 +409,9 @@ impl Chess {
             None => pawns_pos = black_pieces,
         };
 
-        let one_step = pawns_pos >> 8 & !black_pieces;
-        let two_step = (one_step & !CLEAR_RANK[5]) >> 8;
-        let valid_moves = (one_step | two_step) & !white_pieces;
+        let one_step = pawns_pos >> 8 & !black_pieces & !white_pieces;
+        let two_step = (one_step & !CLEAR_RANK[5]) >> 8 & !black_pieces & !white_pieces;
+        let valid_moves = one_step | two_step;
 
         // Attacks
         let right_attack = (pawns_pos & CLEAR_FILE[0]) >> 7;
