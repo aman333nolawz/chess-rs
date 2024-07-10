@@ -1,7 +1,7 @@
 mod chess;
 use std::collections::HashMap;
 
-use chess::{get_nth_bit, Chess};
+use chess::{get_nth_bit, Chess, PieceType};
 use macroquad::prelude::*;
 
 const W: f32 = 800.0;
@@ -23,6 +23,7 @@ fn draw_board(
     piece_textures: &HashMap<char, Texture2D>,
     selected: Option<u8>,
     legal_moves: u64,
+    in_check: Option<usize>,
 ) {
     let colors = [Color::from_hex(0xf3f3f4), Color::from_hex(0x6a9b41)];
     let texture_params = DrawTextureParams {
@@ -37,8 +38,14 @@ fn draw_board(
 
         let piece = chess.get_piece_at(63 - i);
         if piece.is_some() {
+            let piece = piece.unwrap();
+            if in_check.is_some() {
+                if piece.side == in_check.unwrap() && piece.piece_type == PieceType::KING {
+                    draw_rectangle(x * SQ, y * SQ, SQ, SQ, RED);
+                }
+            }
             draw_texture_ex(
-                &piece_textures[&piece.unwrap().get_char()],
+                &piece_textures[&piece.get_char()],
                 x * SQ,
                 y * SQ,
                 WHITE,
@@ -85,10 +92,11 @@ async fn main() {
     let piece_textures = load_textures().await;
     let mut selected = None;
     let mut legal_moves = 0;
+    let mut in_check = None;
 
     loop {
         clear_background(BLACK);
-        draw_board(&chess, &piece_textures, selected, legal_moves);
+        draw_board(&chess, &piece_textures, selected, legal_moves, in_check);
 
         if is_mouse_button_pressed(MouseButton::Left) {
             let (mut x, mut y) = mouse_position();
@@ -99,10 +107,15 @@ async fn main() {
             if selected.is_none() {
                 if 0.0 < x && x < 8.0 && 0.0 < y && y < 8.0 {
                     selected = Some(i);
-                    legal_moves = chess.legal_moves(63 - selected.unwrap(), chess.turn);
+                    legal_moves = chess.legal_moves(63 - selected.unwrap(), Some(chess.turn));
                 }
             } else {
                 chess.move_piece(63 - selected.unwrap(), 63 - i as u8);
+                if chess.is_in_check(chess.turn) {
+                    in_check = Some(chess.turn);
+                } else {
+                    in_check = None;
+                }
                 selected = None;
                 legal_moves = 0;
             }
