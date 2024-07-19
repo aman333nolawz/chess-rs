@@ -1,5 +1,3 @@
-use std::os::unix::raw::off_t;
-
 const CLEAR_RANK: [u64; 8] = [
     18446744073709551360,
     18446744073709486335,
@@ -74,6 +72,9 @@ impl Piece {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct EnPassant(u8, u8); // EnPassant(piece_pos, target_square_pos)
+
 pub fn get_nth_bit(num: u64, n: u8) -> u8 {
     return ((num >> (n)) & 1) as u8;
 }
@@ -82,6 +83,7 @@ pub fn get_nth_bit(num: u64, n: u8) -> u8 {
 pub struct Chess {
     pub board: [[u64; 6]; 2],
     pub turn: usize,
+    pub en_passant: Option<EnPassant>,
 }
 
 impl Chess {
@@ -106,6 +108,7 @@ impl Chess {
         Self {
             board,
             turn: Side::WHITE,
+            en_passant: None,
         }
     }
 
@@ -498,7 +501,7 @@ impl Chess {
     }
 
     fn get_legal_moves(&mut self, from: u64, moves: u64) -> u64 {
-        let og_board = self.board.clone();
+        let og_chess = self.clone();
         let from = (from.ilog2()) as u8;
         let piece = self.get_piece_at(from);
         if piece.is_none() {
@@ -518,7 +521,7 @@ impl Chess {
                 legal_moves = legal_moves | (1 << pos);
             }
 
-            self.board = og_board;
+            self.clone_from(&og_chess);
         }
         return legal_moves;
     }
@@ -527,34 +530,62 @@ impl Chess {
         let piece = self.get_piece_at(from);
         let side;
         let piece_type;
+        let current_en_passant = self.en_passant; // Store the current en passant target square as it gets overwritten later
         match piece {
+            // Special case for pawns to add en passant
+            Some(Piece {
+                piece_type: PieceType::PAWN,
+                side: pawn_side,
+            }) => {
+                side = pawn_side;
+                piece_type = PieceType::PAWN;
+                // Set en passant target square
+                if to.abs_diff(from) == 16 {
+                    if side == Side::WHITE {
+                        self.en_passant = Some(EnPassant(to, from + 8));
+                    } else {
+                        self.en_passant = Some(EnPassant(to, from - 8));
+                    }
+                }
+            }
             Some(piece) => {
                 side = piece.side;
                 piece_type = piece.piece_type;
+                // Unset en passant target square
+                self.en_passant = None;
             }
             _ => return,
         };
-        let mut white_pieces = 0;
-        let mut black_pieces = 0;
-        for (index, pieces) in self.board[Side::WHITE].iter().enumerate() {
-            white_pieces = white_pieces | pieces;
-            black_pieces = black_pieces | self.board[Side::BLACK][index];
+        let mut own_side = 0;
+        let mut opp_side = 0;
+        for (index, pieces) in self.board[side].iter().enumerate() {
+            own_side = own_side | pieces;
+            opp_side = opp_side | self.board[Side::get_opposite(side)][index];
         }
 
-        if side == Side::WHITE {
-            white_pieces =
-                white_pieces | ((self.board[side][piece_type] & !(1 << from)) | (1 << (to)));
-        } else {
-            black_pieces =
-                black_pieces | ((self.board[side][piece_type] & !(1 << from)) | (1 << (to)));
-        }
+        // Update the selected piece's position with the moved position
+        own_side = own_side | ((self.board[side][piece_type] & !(1 << from)) | (1 << (to)));
 
         // Checking removal of pieces
-        if get_nth_bit(white_pieces, to) == get_nth_bit(black_pieces, to) {
-            let removed_piece = self.get_piece_at(to).unwrap();
-            self.board[removed_piece.side][removed_piece.piece_type] =
-                self.board[removed_piece.side][removed_piece.piece_type] & !(1 << to);
-        };
+        if get_nth_bit(own_side, to) == get_nth_bit(opp_side, to)
+            || (current_en_passant.is_some() && current_en_passant.unwrap().1 == to)
+        {
+            let removed_piece = self.get_piece_at(to);
+            match removed_piece {
+                Some(removed_piece) => {
+                    // a piece is taken by the opponent
+                    self.board[removed_piece.side][removed_piece.piece_type] =
+                        self.board[removed_piece.side][removed_piece.piece_type] & !(1 << to);
+                }
+                None => {
+                    // En passant
+                    let target_square = self.get_piece_at(current_en_passant.unwrap().0).unwrap();
+                    self.board[target_square.side][target_square.piece_type] = self.board
+                        [target_square.side][target_square.piece_type]
+                        & !(1 << current_en_passant.unwrap().0);
+                }
+            }
+        }
 
         self.board[side][piece_type] = (self.board[side][piece_type] & !(1 << from)) | (1 << (to));
     }
@@ -565,5 +596,11 @@ impl Chess {
         }
         self.make_move(from, to);
         self.turn = Side::get_opposite(self.turn);
+    }
+}
+
+impl Default for Chess {
+    fn default() -> Self {
+        Self::new()
     }
 }
