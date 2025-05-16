@@ -5,3 +5,10 @@ Also checkout my other project [ssehc](https://github.com/aman333nolawz/ssehc) f
 
 
 ![screenshot](https://github.com/user-attachments/assets/59ea414b-27fc-42f6-b3a0-ae68433c93ef)
+
+# Installation
+```
+git clone https://github.com/aman333nolawz/chess-rs
+cd chess-rs
+cargo run --release
+```
